@@ -1,71 +1,72 @@
-# Wanda Voice — Orb (Siri-style) + Mission Control Center (MCC)
+<div align="center">
+  <h1>🎙️ Vox-Voice</h1>
+  <p><strong>Offline-First Voice-OS for Linux / Wayland / COSMIC Interfaces.</strong></p>
+  <a href="https://github.com/Jas0nOW/Vox-Voice">View Repository</a>
+</div>
 
-**Repo:** [https://github.com/Jas0nOW/Vox-Voice](https://github.com/Jas0nOW/Vox-Voice)
+---
 
-Offline-first Voice-OS for Linux/Wayland/COSMIC with:
-- realtime audio pipeline + barge-in + cancellation (design + skeleton)
-- typed event bus (`session_id` everywhere)
-- observability (Chrome Trace JSON / Perfetto import) + optional OTEL spans
-- debug/replay (content-addressed artifacts + run manifests)
-- Orb overlay (layer-shell) + MCC control plane (web UI)
+**Vox-Voice** acts as the high-fidelity acoustic interface ("The Senses") for the WANDA Ecosystem. It is a Siri/Orb-style Voice-OS explicitly designed for modern Linux desktop environments. 
 
-> This repo ships a **simulation mode** so you can validate events/trace/run-manifest without audio dependencies.
+It provides an advanced real-time audio pipeline prioritizing low latency, barge-in (interrupt capabilities), and seamless integration with existing desktop applications via `layer-shell` and `evdev`.
 
-## Defaults (as requested)
-- Audio backend routing: **PipeWire**
-- LLM bridge default: **Gemini CLI** (profiles: `fast`/`reasoning`/`auto`)
-- Alternative LLM backend: **Ollama** (selectable)
+## ✨ Key Features
 
-Config: `backend/voice-engine/config/default.json`
+- **Real-Time Audio Pipeline:** Built for minimal latency featuring active barge-in and echo cancellation (design implementation).
+- **Offline-First Capabilities:** Capable of running STT (Speech-to-Text) and TTS (Text-to-Speech) entirely on local hardware (e.g., via Whisper or Kokoro), protecting user privacy out-of-the-box.
+- **Typed Event Bus:** All internal communication is strictly typed with `session_id` tracing for robust error tracking and state management.
+- **Deep Observability:** Support for Chrome Trace JSON / Perfetto import and optional OpenTelemetry (OTEL) spans for precise audio pipeline debugging.
+- **UI Integrations:** Includes an "Orb" desktop overlay crafted with GTK4 and `gtk4-layer-shell`.
+- **LLM Agnostic:** Defaults to the powerful Gemini CLI bridge but fully supports local Ollama endpoints for completely offline interactions.
 
-### Gemini profiles (exact commands)
-- `auto`: `gemini`
-- `fast`: `gemini --model gemini-3-flash-preview`
-- `reasoning`: `gemini --model gemini-3-pro-preview`
+## 🚀 Quick Start (Dev/Sim Mode)
 
-## Quick start (dev/sim mode)
+The repository ships with a **simulation mode**, allowing you to validate events, traces, and the run-manifest without complex audio hardware dependencies.
 
-### 1) Start backend (gateway + sim sessions)
+### 1) Start the Voice Engine (Backend)
+
 ```bash
 cd backend/voice-engine
 python -m venv .venv && source .venv/bin/activate
 pip install -U pip
 pip install -e .
 
-# starts WebSocket gateway on :7777
+# Starts the WebSocket gateway on port 7777 (Sim Mode)
 voice-engine --mode sim --config config/default.json --ws-host 127.0.0.1 --ws-port 7777 --autostart
 ```
 
-### 2) Open MCC (static web UI)
-```bash
-python -m http.server 5173 --directory ../../frontend/mcc
-# open http://127.0.0.1:5173
-```
+### 2) Run the Orb Overlay (Frontend)
 
-### 3) Run Orb (GTK4 + gtk4-layer-shell)
 ```bash
 cd ../../frontend/orb
 python -m venv .venv && source .venv/bin/activate
 pip install -U pip websockets
+
+# Connects to the event and command WebSockets
 python orb.py --ws ws://127.0.0.1:7777/ws/events --cmd ws://127.0.0.1:7777/ws/command
 ```
 
-## Debug / Validate
+## 🐛 Debugging & Validation
 
 ```bash
+# Start the voice loop with active --debug flag printing detailed state outputs
 ./scripts/start_debug.sh
+
+# Complete system validation checks
 ./scripts/validate_basics.sh
 ```
 
-`start_debug.sh` startet den Voice-Loop mit aktivem `--debug` Flag.
+## 📚 Technical Documentation & Architecture
 
-## Docs
-- `docs/00_overview/SYSTEM_DESIGN.md` — 1–2 page architecture + defaults
-- `docs/01_research/SOTA_OPTIONS.md` — option research + recommendations
-- `docs/02_architecture/` — events/state, tracing, replay, security
-- `docs/04_plan/` — milestones + DoD/acceptance tests
-- `docs/05_specs/` — Orb/MCC/DevContext/DSP specs
-- `prompts/` — master prompt + implementation prompts
+For deep-dives into our low-latency goals and architecture decisions:
 
-## License
-MIT (adjust as needed).
+- **Architecture Overview:** `docs/00_overview/SYSTEM_DESIGN.md`
+- **SOTA Research:** `docs/01_research/SOTA_OPTIONS.md`
+- **Internal Specs:** `docs/05_specs/` (Orb/MCC/DevContext/DSP)
+- **Roadmap:** `docs/04_plan/`
+
+## ⚖️ License
+MIT
+
+---
+*Built under the JANNIS PROTOCOL — Code Must Be Tested, Efficient, and Secure.*
