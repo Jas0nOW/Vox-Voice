@@ -1,43 +1,50 @@
 # Python
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
 *.pyd
 .venv/
-/venv/
+venv/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 *.egg-info/
 
-# Voice OS Data
+# Voice runtime data
 /runs/
 /cas/
+/backend/voice-engine/runs/
+/backend/voice-engine/cas/
 *.wav
 *.mp3
 *.flac
 *.m4a
 
-# Engines (AI models/repos) - Should be managed separately or as submodules
+# Engines and generated artifacts
 /engines/
 /backend/**/logs/
 /backend/**/*.db
 
-# Research
-/research/
-
-# Node/Frontend
+# Frontend/node artifacts
 node_modules/
+.next/
+.turbo/
 dist/
-/.next/
-/.turbo/
 
-# Misc
-.DS_Store
+# Logs and runtime
 .runtime/
 *.log
-.env
-.env.local
 
-# Large samples
+# Secrets
+.env
+.env.*
+
+# Optional large local datasets
+/research/
 /samples/
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/

@@ -1,72 +1,78 @@
 <div align="center">
-  <h1>🎙️ Vox-Voice</h1>
-  <p><strong>Offline-First Voice-OS for Linux / Wayland / COSMIC Interfaces.</strong></p>
-  <a href="https://github.com/Jas0nOW/Vox-Voice">View Repository</a>
+
+# Vox-Voice
+
+**Offline-first voice runtime for Linux and WANDA interfaces**
+
+[![Status](https://img.shields.io/badge/status-active-brightgreen)](./docs/04_plan/HANDOFF.md)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](./pyproject.toml)
+[![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
+
 </div>
 
----
+Vox-Voice is the acoustic interface for the WANDA ecosystem.  
+It focuses on low-latency voice interaction, typed event flows, and reliable local/offline execution.
 
-**Vox-Voice** acts as the high-fidelity acoustic interface ("The Senses") for the WANDA Ecosystem. It is a Siri/Orb-style Voice-OS explicitly designed for modern Linux desktop environments. 
+## Core Capabilities
 
-It provides an advanced real-time audio pipeline prioritizing low latency, barge-in (interrupt capabilities), and seamless integration with existing desktop applications via `layer-shell` and `evdev`.
+- Real-time voice pipeline with barge-in support
+- Offline-first STT/TTS options
+- Typed event bus with session tracing
+- Orb overlay and UI integration layer
+- Bridge support for local providers and WANDA workflows
 
-## ✨ Key Features
+## Repository Layout
 
-- **Real-Time Audio Pipeline:** Built for minimal latency featuring active barge-in and echo cancellation (design implementation).
-- **Offline-First Capabilities:** Capable of running STT (Speech-to-Text) and TTS (Text-to-Speech) entirely on local hardware (e.g., via Whisper or Kokoro), protecting user privacy out-of-the-box.
-- **Typed Event Bus:** All internal communication is strictly typed with `session_id` tracing for robust error tracking and state management.
-- **Deep Observability:** Support for Chrome Trace JSON / Perfetto import and optional OpenTelemetry (OTEL) spans for precise audio pipeline debugging.
-- **UI Integrations:** Includes an "Orb" desktop overlay crafted with GTK4 and `gtk4-layer-shell`.
-- **LLM Agnostic:** Defaults to the powerful Gemini CLI bridge but fully supports local Ollama endpoints for completely offline interactions.
+| Path | Purpose |
+| --- | --- |
+| `backend/voice-engine/` | WS gateway and audio engine |
+| `frontend/orb/` | Orb overlay client |
+| `src/wandavoice/` | Core package and CLI logic |
+| `scripts/` | Validation, setup, model helpers |
+| `docs/` | Architecture, plan, and operations docs |
 
-## 🚀 Quick Start (Dev/Sim Mode)
-
-The repository ships with a **simulation mode**, allowing you to validate events, traces, and the run-manifest without complex audio hardware dependencies.
-
-### 1) Start the Voice Engine (Backend)
+## Quick Start (Simulation)
 
 ```bash
 cd backend/voice-engine
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv
+source .venv/bin/activate
 pip install -U pip
 pip install -e .
-
-# Starts the WebSocket gateway on port 7777 (Sim Mode)
 voice-engine --mode sim --config config/default.json --ws-host 127.0.0.1 --ws-port 7777 --autostart
 ```
 
-### 2) Run the Orb Overlay (Frontend)
+In a second terminal:
 
 ```bash
-cd ../../frontend/orb
-python -m venv .venv && source .venv/bin/activate
+cd frontend/orb
+python -m venv .venv
+source .venv/bin/activate
 pip install -U pip websockets
-
-# Connects to the event and command WebSockets
 python orb.py --ws ws://127.0.0.1:7777/ws/events --cmd ws://127.0.0.1:7777/ws/command
 ```
 
-## 🐛 Debugging & Validation
+## Validation
 
 ```bash
-# Start the voice loop with active --debug flag printing detailed state outputs
-./scripts/start_debug.sh
-
-# Complete system validation checks
 ./scripts/validate_basics.sh
+./scripts/start_debug.sh
 ```
 
-## 📚 Technical Documentation & Architecture
+## Documentation
 
-For deep-dives into our low-latency goals and architecture decisions:
+- [System Design](./docs/00_overview/SYSTEM_DESIGN.md)
+- [Architecture](./docs/02_architecture/ARCH.md)
+- [Usage](./docs/03_usage/USAGE.md)
+- [Tasks](./docs/04_plan/TASKS.md)
+- [Handoff](./docs/04_plan/HANDOFF.md)
 
-- **Architecture Overview:** `docs/00_overview/SYSTEM_DESIGN.md`
-- **SOTA Research:** `docs/01_research/SOTA_OPTIONS.md`
-- **Internal Specs:** `docs/05_specs/` (Orb/MCC/DevContext/DSP)
-- **Roadmap:** `docs/04_plan/`
+## Security and Data Hygiene
 
-## ⚖️ License
-MIT
+- Keep `.env` local and untracked
+- Keep generated audio artifacts and model caches out of git
+- Review `docs/02_architecture/SECURITY.md` before production rollout
 
----
-*Built under the JANNIS PROTOCOL — Code Must Be Tested, Efficient, and Secure.*
+## License
+
+MIT. See [LICENSE](./LICENSE).
