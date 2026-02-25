@@ -1,5 +1,7 @@
 # Wanda Voice — Orb (Siri-style) + Mission Control Center (MCC)
 
+**Repo:** [https://github.com/Jas0nOW/Vox-Voice](https://github.com/Jas0nOW/Vox-Voice)
+
 Offline-first Voice-OS for Linux/Wayland/COSMIC with:
 - realtime audio pipeline + barge-in + cancellation (design + skeleton)
 - typed event bus (`session_id` everywhere)
