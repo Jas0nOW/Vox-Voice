@@ -1,0 +1,12 @@
+click>=8.1
+numpy>=1.24
+sounddevice>=0.4.6
+webrtcvad>=2.0.10
+faster-whisper>=1.0.3
+pyyaml>=6.0
+pyperclip>=1.8.2
+pynput>=1.7.6
+evdev>=1.6.0
+azure-cognitiveservices-speech>=1.34.0
+
+requests>=2.31

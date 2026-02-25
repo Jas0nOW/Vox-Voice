@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "session_id": "01KJ794Y7X81C3WPSY34YC6E6M",
+  "started_at_unix_ms": 1771918489853,
+  "ended_at_unix_ms": 1771918491137,
+  "mode": "sim",
+  "llm": {
+    "backend": "gemini_cli",
+    "profile": "fast",
+    "profile_cfg": {
+      "model": "gemini-3-flash-preview",
+      "auto_reasoning": false
+    }
+  },
+  "dev_context": {
+    "attached": false,
+    "mode": "once"
+  },
+  "artifacts": {
+    "transcripts_json_sha256": "e2b0c15120019c08c3f44632ef5190d46007d5e2f7de3b3d565ce7d1b8929dfc",
+    "trace_json_sha256": "0ec27bf6d0464a8520681231a543583c6ce01c82e4b46d53c193f024a30dc2f1",
+    "config_json_sha256": "7d3a1daf46dec1e88fde95cc38120254ba2fc3715fc0181a02d3d833ed4bde2d"
+  }
+}

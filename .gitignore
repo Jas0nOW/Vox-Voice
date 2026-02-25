@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+/venv/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Voice OS Data
+/runs/
+/cas/
+*.wav
+*.mp3
+*.flac
+*.m4a
+
+# Engines (AI models/repos) - Should be managed separately or as submodules
+/engines/
+/backend/**/logs/
+/backend/**/*.db
+
+# Research
+/research/
+
+# Node/Frontend
+node_modules/
+dist/
+/.next/
+/.turbo/
+
+# Misc
+.DS_Store
+.runtime/
+*.log
+.env
+.env.local
+
+# Large samples
+/samples/

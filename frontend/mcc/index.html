@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>WANDA MCC — Neural Nexus</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     LAYER 0: Neural canvas (fixed background, pointer-events:none)
+     ═══════════════════════════════════════════════════════════════ -->
+<canvas id="neural-field"></canvas>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     LAYER 1: HUD / Toast Container (fixed overlay)
+     ═══════════════════════════════════════════════════════════════ -->
+<div id="hud"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     LAYER 2: App Shell
+     ═══════════════════════════════════════════════════════════════ -->
+<div id="app">
+
+  <!-- ── SIDEBAR / NAV ── -->
+  <aside class="nav">
+    <div class="brand">
+      <div class="brand-dot"></div>
+      WANDA MCC
+    </div>
+
+    <div class="navgroup">
+      <div class="nav-section-label">Core</div>
+      <button class="navbtn" data-panel="overview">Overview</button>
+      <button class="navbtn" data-panel="conversation">Conversation</button>
+
+      <div class="nav-section-label">Audio / DSP</div>
+      <button class="navbtn" data-panel="audio">Audio</button>
+      <button class="navbtn" data-panel="dsp">DSP (AEC/NS/AGC)</button>
+
+      <div class="nav-section-label">Voice Pipeline</div>
+      <button class="navbtn" data-panel="wake">Wake Word</button>
+      <button class="navbtn" data-panel="vad">VAD</button>
+      <button class="navbtn" data-panel="stt">STT</button>
+      <button class="navbtn" data-panel="router">Router</button>
+
+      <div class="nav-section-label">AI / Skills</div>
+      <button class="navbtn" data-panel="skills">Skills</button>
+      <button class="navbtn" data-panel="llm">LLM Bridge</button>
+      <button class="navbtn" data-panel="tts">TTS / Voices</button>
+
+      <div class="nav-section-label">Dev Tools</div>
+      <button class="navbtn" data-panel="devctx">Dev Context</button>
+      <button class="navbtn" data-panel="tinker">Tinker MCC</button>
+      <button class="navbtn" data-panel="replay">Debug / Replay</button>
+      <button class="navbtn" data-panel="runs">Runs / Artifacts</button>
+
+      <div class="nav-section-label">Config</div>
+      <button class="navbtn" data-panel="settings">Settings</button>
+      <button class="navbtn" data-panel="logs">Logs</button>
+    </div>
+  </aside>
+
+  <!-- ── MAIN AREA ── -->
+  <main class="main">
+
+    <!-- ── TOP BAR ── -->
+    <header class="topbar">
+      <div class="toprow">
+        <!-- State + Session -->
+        <div class="pill"><span class="k">State</span><span id="state" class="v">SLEEPING</span></div>
+        <div class="pill"><span class="k">Session</span><span id="sid" class="v mono">—</span></div>
+        <div class="pill"><span class="k">Latency</span><span id="lat" class="v">P50 — / P95 — / P99 —</span></div>
+
+        <!-- Routing mode badge (Orb toggle mirror) -->
+        <div id="modeBadge" class="mode-badge gemini" title="Click to toggle routing mode (or click the Orb)">
+          GEMINI
+        </div>
+
+        <!-- Console session status chips -->
+        <div class="scl">
+          <span class="sc"><span class="sl">Model</span><span id="scModel" class="sv ok">auto</span></span>
+          <span class="sc"><span class="sl">Uptime</span><span id="scUptime" class="sv">0s</span></span>
+          <span class="sc"><span class="sl">Restart</span><span id="scRestart" class="sv">—</span></span>
+          <span class="sc"><span class="sl">Mode</span><span id="scMode" class="sv ok">CLI</span></span>
+        </div>
+      </div>
+
+      <div class="controls">
+        <!-- Primary actions -->
+        <button id="btnStart">▶ Start</button>
+        <button id="btnStop" class="danger">■ Stop</button>
+        <button id="btnMute">Mute</button>
+        <button id="btnSleep">Sleep</button>
+
+        <div class="sep"></div>
+
+        <!-- Console Mode toggle (CLI ↔ Simple STT) with shortcut hint -->
+        <div class="toggle-switch" id="consoleModeToggle" title="Ctrl+M to toggle">
+          <button id="btnModeCLI"  class="active-toggle" data-mode="cli">CLI</button>
+          <button id="btnModeSTT"  data-mode="simple_stt">Simple STT</button>
+        </div>
+        <span class="shortcut-hint">
+          <span class="kbd">Ctrl</span>+<span class="kbd">M</span>
+        </span>
+
+        <div class="sep"></div>
+
+        <!-- LLM backend -->
+        <label class="inline">
+          <span class="k" style="color:var(--muted);font-size:11px">LLM</span>
+          <select id="llmBackend">
+            <option value="gemini_cli">Gemini CLI</option>
+            <option value="ollama">Ollama</option>
+          </select>
+        </label>
+
+        <!-- Profile quick-select -->
+        <button class="profile" data-profile="fast">⚡ Fast</button>
+        <button class="profile" data-profile="reasoning">🧠 Reasoning</button>
+        <button class="profile" data-profile="auto">◎ Auto</button>
+
+        <div class="sep"></div>
+        <button id="btnRestartBridge">↺ Restart Bridge</button>
+      </div>
+    </header>
+
+    <!-- ═══════════════════════════════════════
+         CONTENT PANELS
+         ═══════════════════════════════════════ -->
+    <section class="content">
+
+      <!-- ── OVERVIEW ── -->
+      <section id="panel-overview" class="panel">
+        <h2>Overview</h2>
+
+        <!-- Orb + quick stats row -->
+        <div class="grid2">
+
+          <!-- Orb/Oval -->
+          <div class="card">
+            <h3>Neural Orb</h3>
+            <div class="orb-container">
+              <div class="orb-wrapper">
+                <div class="orb" id="orb" title="Click to toggle: Gemini ↔ Window Insert">
+                  <span class="orb-label">WANDA</span>
+                </div>
+              </div>
+              <div class="orb-state-label">State: <span id="orbStateLbl">SLEEPING</span></div>
+              <div class="orb-mode-label" id="orbModeLbl" style="color:var(--primary)">⬡ GEMINI MODE</div>
+            </div>
+          </div>
+
+          <!-- Live stats -->
+          <div class="card">
+            <h3>Live Stats</h3>
+            <div class="kv">
+              <div><span class="k">mic RMS</span><span id="micRms" class="v live">—</span></div>
+              <div><span class="k">out RMS</span><span id="outRms" class="v live">—</span></div>
+              <div><span class="k">echo likelihood</span><span id="echoLikely" class="v">—</span></div>
+              <div><span class="k">orb fps</span><span id="orbFps" class="v live">—</span></div>
+              <div><span class="k">orb dropped</span><span id="orbDrop" class="v">—</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Session manager status -->
+        <div class="card">
+          <h3>Console Session Manager</h3>
+          <div class="kv">
+            <div><span class="k">session status</span><span id="csmStatus" class="v live">idle</span></div>
+            <div><span class="k">active model</span><span id="csmModel" class="v live">auto</span></div>
+            <div><span class="k">active profile</span><span id="csmProfile" class="v">auto</span></div>
+            <div><span class="k">uptime</span><span id="csmUptime" class="v">—</span></div>
+            <div><span class="k">last restart reason</span><span id="csmRestartReason" class="v">—</span></div>
+            <div><span class="k">restart count</span><span id="csmRestartCount" class="v">0</span></div>
+          </div>
+        </div>
+
+        <!-- Timeline -->
+        <div class="card">
+          <h3>Event Timeline</h3>
+          <div id="timeline" class="timeline"></div>
+        </div>
+
+        <!-- Last run -->
+        <div class="card">
+          <h3>Last Run</h3>
+          <div class="kv">
+            <div><span class="k">manifest path</span><span id="manifestPath" class="v mono" style="font-size:10px">—</span></div>
+            <div><span class="k">trace sha256</span><span id="traceHash" class="v mono" style="font-size:10px">—</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── CONVERSATION ── -->
+      <section id="panel-conversation" class="panel hidden">
+        <h2>Conversation</h2>
+        <div class="card">
+          <div class="row" style="margin-bottom:8px">
+            <button id="btnConvClear">Clear</button>
+            <button id="btnConvExport">Export</button>
+            <button id="btnMarkGolden">★ Mark Golden</button>
+          </div>
+          <div id="conv"></div>
+        </div>
+      </section>
+
+      <!-- ── AUDIO ── -->
+      <section id="panel-audio" class="panel hidden">
+        <h2>Audio</h2>
+        <div class="card">
+          <div class="kv">
+            <div><span class="k">input device</span><span id="inDev" class="v mono">—</span></div>
+            <div><span class="k">output device</span><span id="outDev" class="v mono">—</span></div>
+            <div><span class="k">backend</span><span id="audioBackend" class="v">—</span></div>
+            <div><span class="k">sample rate</span><span id="sr" class="v">—</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Ring Buffer / Pre-roll</h3>
+          <p class="muted" style="font-size:12px">Pre-roll buffer (2-5s) captured before wake detected. Saves to CAS artifacts per session. Configurable in Settings.</p>
+        </div>
+      </section>
+
+      <!-- ── DSP ── -->
+      <section id="panel-dsp" class="panel hidden">
+        <h2>DSP (AEC / NS / AGC)</h2>
+        <div class="card">
+          <div class="kv">
+            <div><span class="k">AEC</span><span id="aec" class="v">—</span></div>
+            <div><span class="k">NS level</span><span id="ns" class="v">—</span></div>
+            <div><span class="k">AGC</span><span id="agc" class="v">—</span></div>
+            <div><span class="k">echo likelihood</span><span id="echoLikely2" class="v">—</span></div>
+          </div>
+        </div>
+        <div class="card secondary-card">
+          <h3>DSP Mode</h3>
+          <div class="row">
+            <button data-dsp-mode="headset">Headset</button>
+            <button data-dsp-mode="speakers">Speakers</button>
+          </div>
+          <p class="muted" style="font-size:11px;margin-top:8px">Speaker mode activates AEC with monitor.mode=true (PipeWire module-echo-cancel webrtc). See docs/05_specs/SPEC_DSP.md.</p>
+        </div>
+      </section>
+
+      <!-- ── WAKE WORD ── -->
+      <section id="panel-wake" class="panel hidden">
+        <h2>Wake Word</h2>
+        <div class="card">
+          <div class="kv">
+            <div><span class="k">engine</span><span class="v">openWakeWord (ONNX)</span></div>
+            <div><span class="k">false positives/hr</span><span id="wakeFA" class="v">—</span></div>
+            <div><span class="k">wake latency (last)</span><span id="wakeLat" class="v">—</span></div>
+            <div><span class="k">threshold</span><span id="wakeThresh" class="v">0.5</span></div>
+          </div>
+        </div>
+        <div class="card secondary-card">
+          <h3>Wake Words</h3>
+          <div id="wakeWordList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+          <div class="row">
+            <input id="wakeWordInput" type="text" placeholder="New wake word…" style="flex:1;background:rgba(5,5,10,0.9);border:1px solid rgba(0,240,255,0.18);color:var(--text);border-radius:8px;padding:5px 10px;font-size:12px;font-family:var(--font)"/>
+            <button onclick="addWakeWord()">+ Add</button>
+          </div>
+        </div>
+        <div class="card secondary-card">
+          <h3>Push-to-Talk Fallback</h3>
+          <p class="muted" style="font-size:11px">PTT activates via hotkey or MCC button. Bypasses wake word detection.</p>
+          <button id="btnPTT" style="margin-top:8px">Hold: Push to Talk</button>
+        </div>
+      </section>
+
+      <!-- ── VAD ── -->
+      <section id="panel-vad" class="panel hidden">
+        <h2>VAD / Endpointing</h2>
+        <div class="card">
+          <div class="kv">
+            <div><span class="k">min_speech_ms</span><span id="vadMinSpeech" class="v">150</span></div>
+            <div><span class="k">end_silence_ms</span><span id="vadEndSilence" class="v">350</span></div>
+            <div><span class="k">continue_window_ms</span><span id="vadContinue" class="v">750</span></div>
+            <div><span class="k">live: would end now?</span><span id="vadWouldEnd" class="v">—</span></div>
+          </div>
+        </div>
+        <div class="card secondary-card">
+          <h3>Profile</h3>
+          <div class="row">
+            <button data-vad-profile="command">Command Mode (tight)</button>
+            <button data-vad-profile="chat">Chat Mode (relaxed)</button>
+          </div>
+          <p class="muted" style="font-size:11px;margin-top:8px">Command: end_silence 280-420ms, continue 650-900ms · Chat: end_silence 500-750ms, continue 900-1300ms</p>
+        </div>
+      </section>
+
+      <!-- ── STT ── -->
+      <section id="panel-stt" class="panel hidden">
+        <h2>STT</h2>
+        <div class="card">
+          <div class="kv">
+            <div><span class="k">model</span><span id="sttModel" class="v">faster_whisper_medium</span></div>
+            <div><span class="k">last confidence</span><span id="sttConf" class="v">—</span></div>
+            <div><span class="k">confusion hits</span><span id="sttConfusion" class="v">0</span></div>
+            <div><span class="k">partial latency</span><span id="sttPartialLat" class="v">—</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Transcript (partial + final)</h3>
+          <div id="sttTranscript" class="mono" style="font-size:11px;max-height:200px;overflow:auto;white-space:pre-wrap;color:var(--muted)"></div>
+        </div>
+      </section>
+
+      <!-- ── ROUTER ── -->
+      <section id="panel-router" class="panel hidden">
+        <h2>Router</h2>
+        <div class="card">
+          <div class="kv">
+            <div><span class="k">last decision</span><span id="routerDecision" class="v">—</span></div>
+            <div><span class="k">reason</span><span id="routerReason" class="v">—</span></div>
+          </div>
+        </div>
+        <div class="card secondary-card">
+          <h3>Safety</h3>
+          <p class="muted" style="font-size:11px">High-risk commands require explicit confirm. Dev mode bypasses confirm (UNTRUSTED).</p>
+          <div class="row" style="margin-top:8px">
+            <label class="inline"><input type="checkbox" id="routerDevMode"/> <span>Dev mode (skip confirm)</span></label>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── SKILLS ── -->
+      <section id="panel-skills" class="panel hidden">
+        <h2>Skills</h2>
+        <div class="card secondary-card">
+          <h3>Skill Allowlist</h3>
+          <p class="muted" style="font-size:11px;margin-bottom:10px">
+            <span style="color:#00F0FF">✓ Safe</span> = auto-execute ·
+            <span style="color:#FFB800">? Confirm</span> = user prompt ·
+            <span style="color:#ff6b6b">✕ Blocked</span> = never run
+          </p>
+          <div id="skillsList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+          <div class="row">
+            <input id="skillInput" type="text" placeholder="New skill name…" style="flex:1;background:rgba(5,5,10,0.9);border:1px solid rgba(0,240,255,0.18);color:var(--text);border-radius:8px;padding:5px 10px;font-size:12px;font-family:var(--font)"/>
+            <button onclick="addSkill()">+ Add</button>
+          </div>
+        </div>
+        <div class="card secondary-card">
+          <h3>Audit Log</h3>
+          <div id="skillsAudit" class="mono log" style="font-size:11px">— no invocations yet —</div>
+        </div>
+      </section>
+
+      <!-- ── LLM BRIDGE ── -->
+      <section id="panel-llm" class="panel hidden">
+        <h2>LLM Bridge</h2>
+        <div class="card">
+          <div class="kv">
+            <div><span class="k">backend</span><span id="llmBackendLive" class="v live">—</span></div>
+            <div><span class="k">profile</span><span id="llmProfileLive" class="v">—</span></div>
+            <div><span class="k">bridge pid / status</span><span id="llmPid" class="v">—</span></div>
+            <div><span class="k">first token time</span><span id="ftt" class="v">—</span></div>
+            <div><span class="k">total time</span><span id="llmTotal" class="v">—</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Stream Output</h3>
+          <div class="row" style="margin-bottom:6px">
+            <label class="inline"><input type="radio" name="llmOutputMode" value="speakable" checked/> <span>Speakable (1-3 sentences)</span></label>
+            <label class="inline"><input type="radio" name="llmOutputMode" value="full"/> <span>Full (log only)</span></label>
+          </div>
+          <pre id="llmStream" class="mono stream"></pre>
+        </div>
+        <div class="card secondary-card">
+          <h3>Controls</h3>
+          <div class="row">
+            <button id="btnRestartBridge2">↺ Restart Bridge</button>
+            <button id="btnClearLLMStream">Clear stream</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── TTS ── -->
+      <section id="panel-tts" class="panel hidden">
+        <h2>TTS / Voices</h2>
+        <div class="card">
+          <div class="kv">
+            <div><span class="k">active engine</span><span id="ttsEngine" class="v">edge:de-DE-SeraphinaNeural</span></div>
+            <div><span class="k">barge-in stop (last)</span><span id="ttsBargeIn" class="v">—</span></div>
+            <div><span class="k">first chunk latency</span><span id="ttsFirstChunk" class="v">—</span></div>
+          </div>
+        </div>
+        <div class="card secondary-card">
+          <h3>Barge-in Test</h3>
+          <p class="muted" style="font-size:11px">Target: audio stop &lt;100ms / pipeline cancel &lt;250ms</p>
+          <button style="margin-top:8px" id="btnTestBargeIn">Run Barge-in Test</button>
+        </div>
+      </section>
+
+      <!-- ── DEV CONTEXT ── -->
+      <section id="panel-devctx" class="panel hidden">
+        <h2>Dev Context <span style="font-size:11px;font-weight:400;color:var(--muted)">(UNTRUSTED)</span></h2>
+
+        <div class="card secondary-card">
+          <div class="row">
+            <label class="inline">
+              <input type="checkbox" id="devAuto" checked/>
+              <span style="font-size:12px">Auto-attach</span>
+            </label>
+            <label class="inline">
+              <span class="k" style="font-size:11px;color:var(--muted)">Mode</span>
+              <select id="devMode">
+                <option value="once">Attach once + clear</option>
+                <option value="persistent">Persistent</option>
+              </select>
+            </label>
+            <div class="pill"><span class="k">Tokens</span><span id="devTok" class="v">0</span></div>
+          </div>
+
+          <!-- Tabs: Error / Code / Paths / Terminal / Notes -->
+          <div class="row" style="margin-top:10px;gap:4px">
+            <button class="devtab active-toggle" data-tab="Error">Error</button>
+            <button class="devtab" data-tab="Code">Code</button>
+            <button class="devtab" data-tab="Paths">Paths</button>
+            <button class="devtab" data-tab="Terminal">Terminal</button>
+            <button class="devtab" data-tab="Notes">Notes</button>
+          </div>
+
+          <textarea id="devText" class="textarea mono" placeholder="Paste error / code / paths / terminal output here...&#10;Engine wraps this as:&#10;(START_DEV_CONTEXT_BLOCK) … (END_DEV_CONTEXT_BLOCK)"></textarea>
+
+          <div class="row" style="margin-top:8px">
+            <button id="devClear">Clear</button>
+            <button id="devAttach" style="border-color:rgba(0,240,255,0.4);color:var(--primary)">⚡ Attach</button>
+            <button id="devSend">Send to Engine</button>
+          </div>
+
+          <p class="muted" style="font-size:11px;margin-top:6px">
+            Block marker: <span class="mono">(START_DEV_CONTEXT_BLOCK)…(END_DEV_CONTEXT_BLOCK)</span>
+          </p>
+        </div>
+
+        <!-- Window Insert Panel -->
+        <div class="card" id="windowInsertPanel" style="display:none">
+          <h3>Window Insert Mode</h3>
+          <p class="muted" style="font-size:11px">
+            Active when Orb is in <strong style="color:var(--secondary)">WINDOW_INSERT</strong> mode.
+            Text/code/error pasted here is queued and attached on next voice request.
+          </p>
+          <textarea id="windowInsertText" class="textarea mono" style="min-height:100px" placeholder="Text / code / file path to insert into next request..."></textarea>
+          <div class="row" style="margin-top:6px">
+            <button id="btnWindowInsertAttach" style="border-color:rgba(214,0,255,0.4);color:var(--secondary)">⬡ Attach to Next Request</button>
+            <button id="btnWindowInsertClear">Clear</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── TINKER MCC ── -->
+      <section id="panel-tinker" class="panel hidden">
+        <h2>Tinker MCC</h2>
+
+        <div class="card secondary-card">
+          <h3>Console Mode</h3>
+          <div class="row" style="margin-bottom:10px">
+            <div class="toggle-switch">
+              <button class="active-toggle" data-tinker-mode="cli">CLI Mode</button>
+              <button data-tinker-mode="simple_stt">Simple STT</button>
+            </div>
+            <span class="shortcut-hint"><span class="kbd">Ctrl</span>+<span class="kbd">M</span></span>
+          </div>
+          <div class="kv">
+            <div><span class="k">CLI active services</span><span class="v" id="tinkerCLIServices">console + llm-routing</span></div>
+            <div><span class="k">STT active services</span><span class="v" style="color:var(--muted)">stt-pipeline only</span></div>
+          </div>
+          <p class="muted" style="font-size:11px;margin-top:8px">
+            CLI mode: full Console + LLM routing active.<br>
+            Simple STT: only STT pipeline, no LLM loop (raw transcript output only).
+          </p>
+        </div>
+
+        <div class="card secondary-card">
+          <h3>Model / Profile Quick-Switch</h3>
+          <div class="row">
+            <button class="profile" data-profile="fast">⚡ Fast (gemini-3-flash-preview)</button>
+            <button class="profile" data-profile="reasoning">🧠 Reasoning (gemini-3-pro-preview)</button>
+            <button class="profile" data-profile="auto">◎ Auto (gemini)</button>
+          </div>
+          <p class="muted" style="font-size:11px;margin-top:8px">
+            Model switch within same session → no restart.<br>
+            Backend switch (Gemini ↔ Ollama) → clean stop + new session.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>Session Manager Controls</h3>
+          <div class="row">
+            <button id="btnCSMEnsure">ensureRunning()</button>
+            <button id="btnCSMApplySettings">applySettings()</button>
+            <button id="btnCSMRestart" class="danger">Force Restart</button>
+          </div>
+          <div class="kv" style="margin-top:10px">
+            <div><span class="k">status</span><span id="csmStatus2" class="v live">idle</span></div>
+            <div><span class="k">last restart reason</span><span id="csmRestart2" class="v">—</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── DEBUG / REPLAY ── -->
+      <section id="panel-replay" class="panel hidden">
+        <h2>Debug / Replay</h2>
+        <div class="card">
+          <div class="row" style="margin-bottom:8px">
+            <button id="btnExportTrace">Export Chrome Trace JSON</button>
+            <button id="btnReplayCopy">Copy session_id</button>
+          </div>
+          <p class="muted" style="font-size:11px">
+            Drop exported <span class="mono">trace.json</span> into
+            <span class="mono">ui.perfetto.dev</span> for pipeline flame chart.<br>
+            Events format: <span class="mono">ph:"X"</span> with <span class="mono">ts</span> in microseconds.
+          </p>
+        </div>
+        <div class="card secondary-card">
+          <h3>Event Log (last 100 events)</h3>
+          <div id="replayLog" class="mono log"></div>
+        </div>
+      </section>
+
+      <!-- ── RUNS / ARTIFACTS ── -->
+      <section id="panel-runs" class="panel hidden">
+        <h2>Runs / Artifacts</h2>
+        <div class="card">
+          <p class="muted" style="font-size:12px">
+            CAS blobs: <span class="mono">backend/voice-engine/cas/sha256/</span><br>
+            Run manifests: <span class="mono">backend/voice-engine/runs/</span><br>
+            Each manifest: config snapshot + model versions + artifact SHA256 refs.
+          </p>
+        </div>
+        <div class="card secondary-card">
+          <h3>Last Manifest</h3>
+          <div class="kv">
+            <div><span class="k">path</span><span id="manifestPath2" class="v mono" style="font-size:10px">—</span></div>
+            <div><span class="k">trace sha256</span><span id="traceHash2" class="v mono" style="font-size:10px">—</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── SETTINGS ── -->
+      <section id="panel-settings" class="panel hidden">
+        <h2>Settings</h2>
+        <div class="grid2">
+          <div class="card">
+            <h3>LLM</h3>
+            <div class="kv">
+              <div>
+                <span class="k">backend</span>
+                <select id="setLLMBackend">
+                  <option value="gemini_cli">Gemini CLI</option>
+                  <option value="ollama">Ollama</option>
+                </select>
+              </div>
+              <div>
+                <span class="k">profile</span>
+                <select id="setLLMProfile">
+                  <option value="auto">auto (gemini)</option>
+                  <option value="fast">fast (gemini-3-flash-preview)</option>
+                  <option value="reasoning">reasoning (gemini-3-pro-preview)</option>
+                </select>
+              </div>
+              <div>
+                <span class="k">ollama model</span>
+                <select id="setOllamaModel">
+                  <option value="llama3.1:8b-instruct">llama3.1:8b-instruct</option>
+                  <option value="qwen2.5:7b-instruct">qwen2.5:7b-instruct</option>
+                  <option value="mistral:7b-instruct">mistral:7b-instruct</option>
+                  <option value="phi3:medium-instruct">phi3:medium-instruct</option>
+                </select>
+              </div>
+            </div>
+            <button id="btnApplyLLM" style="margin-top:10px">Apply LLM Settings</button>
+          </div>
+
+          <div class="card">
+            <h3>Voice &amp; STT</h3>
+            <div class="kv">
+              <div>
+                <span class="k">TTS default</span>
+                <select id="setTTSVoice">
+                  <option value="edge:de-DE-SeraphinaNeural">edge:de-DE-SeraphinaNeural</option>
+                  <option value="local:xtts_v2">local:xtts_v2 (balanced)</option>
+                  <option value="local:fish_s1">local:fish_s1 (fast)</option>
+                  <option value="local:f5_tts_german">local:f5_tts_german (cloning)</option>
+                  <option value="local:orpheus_3b">local:orpheus_3b (expressive)</option>
+                  <option value="local:qwen3_tts">local:qwen3_tts (design)</option>
+                </select>
+              </div>
+              <div>
+                <span class="k">STT profile</span>
+                <select id="setSTTProfile">
+                  <option value="fast">fast (faster_whisper small)</option>
+                  <option value="final">final (faster_whisper medium)</option>
+                </select>
+              </div>
+            </div>
+            <button id="btnApplyVoice" style="margin-top:10px">Apply Voice Settings</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── LOGS ── -->
+      <section id="panel-logs" class="panel hidden">
+        <h2>Logs</h2>
+        <div class="card">
+          <div class="row" style="margin-bottom:6px">
+            <button id="btnClearLog">Clear</button>
+            <button id="btnCopyLog">Copy</button>
+          </div>
+          <pre id="log" class="mono log"></pre>
+        </div>
+      </section>
+
+    </section><!-- /content -->
+  </main>
+</div><!-- /#app -->
+
+<script src="app.js"></script>
+</body>
+</html>

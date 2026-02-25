@@ -1,0 +1,12 @@
+def get_ui_env():
+    """Returns a dictionary of environment variables optimized for GTK4/Wayland on NVIDIA."""
+    env = os.environ.copy()
+    env["GDK_BACKEND"] = "wayland"
+    
+    # Fallback to cairo renderer (CPU) to bypass EGL provider issues on NVIDIA/COSMIC
+    # This is much more stable for floating/layered windows on Wayland+NVIDIA
+    env["GSK_RENDERER"] = "cairo"
+    
+    # LD_PRELOAD fix for the GTK4 Layer Shell GI bindings
+    env["LD_PRELOAD"] = "/usr/lib/x86_64-linux-gnu/libgtk4-layer-shell.so"
+    return env
