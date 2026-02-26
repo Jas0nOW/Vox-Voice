@@ -30,15 +30,17 @@ class Router:
         self.inserter = inserter
 
     def route_text(self, text: str, options: RuntimeOptions, prompt: Optional[str] = None) -> RouterResponse:
-        # Check permissions for target
         if options.target == "insert":
+            # Check window_inject permission. Secure default is "ask";
+            # explicit modes (e.g., dictate) can grant session-only allow.
+            # Actual text injection is performed by the caller (process_turn), not here.
             perm = self.permissions.config.get_permission("window_inject")
             if perm == "allow":
-                if self.inserter:
-                    self.inserter.insert_text(text, options.insert_mode)
-                return RouterResponse(target_used="insert", inserted=True)
-            else:
-                # Fallback to stdout
-                return RouterResponse(target_used="stdout", fallback_to_stdout=True)
-        
-        return RouterResponse(target_used="stdout")
+                return RouterResponse(target_used="insert", inserted=False)
+            # Permission denied: log clearly and fall back to LLM so the user gets a response
+            print(f"\033[93m[Router] window_inject permission is '{perm}' — falling back to Gemini. "
+                  f"Set 'window_inject: allow' in ~/.vox/config.yaml to fix.\033[0m")
+            return RouterResponse(target_used="stdout", fallback_to_stdout=True)
+
+        # All other targets (cli:gemini, stdout, etc.) → LLM pipeline in process_turn
+        return RouterResponse(target_used=options.target)

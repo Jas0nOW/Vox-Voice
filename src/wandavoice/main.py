@@ -156,8 +156,15 @@ def handle_mcc_command(cmd, cfg, recorder=None, tts_engine=None, orb_ui=None):
             
         elif ctype == "set_routing_mode":
             mode = payload.get("mode")
-            print_status(f"[MCC] Routing Mode -> {mode}")
-            cfg.update_from_args(target="insert" if mode == "WINDOW_INSERT" else "cli:gemini")
+            target = "insert" if mode == "WINDOW_INSERT" else "cli:gemini"
+            cfg.update_from_args(target=target)
+            # Grant window_inject permission for this session when switching to insert mode.
+            # Does not persist to disk (direct data write bypasses save()).
+            if target == "insert":
+                cfg.data["voice"]["permissions"]["window_inject"] = "allow"
+            print_status(f"[MCC] Routing Mode -> {mode} (target={target})")
+            # Echo confirmation back to frontend so it stays in sync with engine state
+            mcc_server.broadcast("routing_mode_confirmed", {"mode": mode, "target": target})
 
         elif ctype == "set_console_mode":
             mode = payload.get("mode")
@@ -243,6 +250,11 @@ def voice(text, model, tts, reset, debug, no_hotkey, target, no_aura, no_console
     kwargs = {"model": model, "tts": tts}
     if target: kwargs["target"] = target
     cfg.update_from_args(**kwargs)
+
+    # When --target insert is passed explicitly, grant window injection for this session.
+    # Does NOT persist to disk (we write to .data directly, bypassing save()).
+    if target == "insert":
+        cfg.data["voice"]["permissions"]["window_inject"] = "allow"
 
     if debug:
         print_status("[DEBUG] Debug logging enabled.")
@@ -428,22 +440,35 @@ def voice(text, model, tts, reset, debug, no_hotkey, target, no_aura, no_console
 @cli.command()
 @click.option("--model", default="large-v3-turbo", help="Whisper model.")
 @click.option("--debug", is_flag=True, help="Enable debug logging.")
-def dictate(model, debug):
+@click.option("--no-aura", is_flag=True, help="Disable GTK4 Aura")
+@click.option("--no-console", is_flag=True, help="Disable tkinter Console/Pill")
+def dictate(model, debug, no_aura, no_console):
     """Pure STT Dictation: Transcribe and insert directly into active window."""
+    from wandavoice.process_manager import acquire_lock, release_lock
+    if not acquire_lock():
+        print("\033[91m[!] Another VOX engine is already running.\033[0m")
+        print("Run 'vox kill' to terminate it first.")
+        sys.exit(1)
+
     cfg = Config()
     cfg.update_from_args(model=model, target="insert")
-    
+    # Session-only permission grant for explicit dictation mode.
+    # We intentionally do not persist this to disk.
+    cfg.data["voice"]["permissions"]["window_inject"] = "allow"
+
     if debug:
         print_status("[DEBUG] Debug logging enabled.")
 
     orb_ui = VoxOrb(cfg)
-    if orb_ui.enabled:
+    headless = no_aura and no_console
+
+    # Only start UI/MCC when at least one UI component is requested
+    if not headless and orb_ui.enabled:
         from wandavoice.mcc_server import start_mcc_server
         print_status("Starting Web MCC Backend...")
-        start_mcc_server(cmd_callback=lambda c: handle_mcc_command(c, cfg, recorder=recorder, tts_engine=tts_engine, orb_ui=orb_ui))
-        
-        # Priority: GTK4 Layer Shell Orb
-        use_gtk = cfg.get("voice.ui.use_gtk4", True)
+        start_mcc_server(cmd_callback=lambda c: handle_mcc_command(c, cfg, recorder=None, tts_engine=None, orb_ui=orb_ui))
+
+        use_gtk = cfg.get("voice.ui.use_gtk4", True) and not no_aura
         if use_gtk:
             orb_path = os.path.expanduser("~/Schreibtisch/Work-OS/40_Products/Vox-Voice/frontend/orb/orb.py")
             if os.path.exists(orb_path):
@@ -455,13 +480,18 @@ def dictate(model, debug):
                 )
             else:
                 use_gtk = False
-        
-        if not use_gtk:
+
+        if not use_gtk and not no_console:
             print_status("Starting tkinter fallback UI...")
             orb_thread = threading.Thread(target=orb_ui.run, daemon=True, name="orb-ui")
             orb_thread.start()
-            
+        else:
+            orb_ui._ready.set()
+
         orb_ui._ready.wait(timeout=3)
+    else:
+        # Headless: no UI, no MCC server
+        orb_ui._ready.set()
 
     orb_ui.set_state("loading")
 
@@ -471,57 +501,85 @@ def dictate(model, debug):
         print_status(f"VOX Dictation Mode | STT: {model}")
     except Exception as e:
         print(f"\033[91mInit Error:\033[0m {e}")
+        release_lock()
         sys.exit(1)
 
     orb_ui.set_state("idle")
-    print_status("🎤 Press [Right Ctrl] to dictate | Ctrl+C = Quit")
-    
+    print_status("\U0001f3a4 Press [Right Ctrl] to start/stop | Ctrl+C = Quit")
+
     key_queue: queue.Queue = queue.Queue()
     shutdown = threading.Event()
-    start_evdev_listener(key_queue, shutdown)
 
-    while True:
-        try:
-            orb_ui.set_state("idle")
-            key_queue.get()  # block until first keypress
-            time.sleep(0.1)  # Debounce delay
-            while not key_queue.empty():
-                try:
-                    key_queue.get_nowait()
-                except queue.Empty:
-                    pass
-            
-            orb_ui.set_state("listening")
-            audio_data = recorder.record_toggle(
-                key_queue, 
-                stt_engine=stt, 
-                transcript_callback=orb_ui.set_transcript
-            )
+    ok = start_evdev_listener(key_queue, shutdown)
+    if not ok:
+        print_status("\u26a0 No keyboard found via evdev. Ensure you are in the 'input' group.")
+        release_lock()
+        sys.exit(1)
 
-            if audio_data is None:
-                continue
+    # Hallucination filter set (common Whisper silence artifacts)
+    NOISE = {"1", "2", "3", "vielen dank", "untertitel", "oh", "ja", ".", "!", "?",
+             "danke", "danke schoen", "tschuess", "auf wiedersehen", "vielen dank.",
+             "vielen dank fuer das zuschauen.", "untertitel: stephanie wolf"}
 
-            orb_ui.set_state("thinking")
-            user_text = stt.transcribe(audio_data)
+    def _is_noise(text: str) -> bool:
+        return len(text) < 40 and text.lower().strip(".!?, ") in NOISE
 
-            if not user_text or not user_text.strip():
+    try:
+        while not shutdown.is_set():
+            try:
                 orb_ui.set_state("idle")
-                continue
+                key_queue.get()  # block until Right Ctrl press
+                time.sleep(0.1)  # Debounce: drain any duplicate key events
+                while not key_queue.empty():
+                    try:
+                        key_queue.get_nowait()
+                    except queue.Empty:
+                        pass
 
-            orb_ui.set_transcript(user_text)
-            insert_text(user_text, mode=cfg.INSERT_MODE)
-            print_status(f"Inserted: {user_text}")
-            
-            orb_ui.set_response("[Inserted into active window]")
-            time.sleep(0.5)
-            
-        except KeyboardInterrupt:
-            shutdown.set()
-            orb_ui.stop()
-            print("\nGoodbye.")
-            break
-        except Exception as e:
-            print(f"Loop Error: {e}")
+                orb_ui.set_state("listening")
+                first_inject = [True]  # mutable flag for first-segment delay
+
+                def on_segment(audio_segment):
+                    """Called by record_stream_segments for each VAD-delimited speech chunk."""
+                    orb_ui.set_state("thinking")
+                    text = stt.transcribe(audio_segment)
+                    orb_ui.set_state("listening")
+
+                    if not text or not text.strip():
+                        return
+                    if _is_noise(text):
+                        print_status(f"Noise filtered: {repr(text)}")
+                        return
+
+                    # First injection: wait 0.5s to ensure Right Ctrl modifier
+                    # is fully released by the Wayland compositor before wtype runs
+                    if first_inject[0]:
+                        time.sleep(0.5)
+                        first_inject[0] = False
+
+                    # Inject with trailing space so consecutive segments read naturally
+                    inject = text.strip() + " "
+                    insert_text(inject, mode=cfg.INSERT_MODE)
+                    orb_ui.set_transcript(text)
+                    print_status(f"\u2192 {text.strip()}")
+
+                # Progressive streaming: segments injected as user speaks
+                recorder.record_stream_segments(key_queue, on_segment)
+
+                orb_ui.set_response("[Dictation complete]")
+                orb_ui.set_state("idle")
+
+            except KeyboardInterrupt:
+                shutdown.set()
+                orb_ui.stop()
+                print("\nGoodbye.")
+                break
+            except Exception as e:
+                print(f"Loop Error: {e}")
+                if debug:
+                    import traceback; traceback.print_exc()
+    finally:
+        release_lock()
 
 @cli.command("transcribe")
 @click.argument("audio_file")
@@ -689,12 +747,15 @@ def process_turn(user_text, session, llm, tts_engine, orb_ui, cfg, managers, lt=
         lt.start("OS_Insert")
         insert_text(user_text, mode=rt_options.insert_mode)
         lt.stop("OS_Insert")
-        print_say("[Inserted into active window]")
+        print_say(f"[Inserted into active window]: {user_text[:60]}")
         print(lt.format_report())
-        orb_ui.set_response(f"[Inserted: {user_text[:30]}...]")
-        time.sleep(0.5) 
+        orb_ui.set_response(f"[Inserted: {user_text[:50]}...]")
         orb_ui.set_state("idle")
         return
+
+    if decision.fallback_to_stdout:
+        print_status("\u26a0  Insert mode blocked by permission — routing to Gemini instead.")
+        print_status("   Fix: set 'window_inject: allow' in ~/.vox/config.yaml")
 
     # Check for Skills (Intent-based)
     if "führe aus" in user_text.lower() or "shell:" in user_text.lower():

@@ -14,7 +14,7 @@ import websockets
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gtk4LayerShell", "1.0")
-from gi.repository import Gtk, GLib, Gtk4LayerShell
+from gi.repository import Gtk, Gdk, GLib, Gtk4LayerShell
 
 STATE_MAP = {
     "wake_detected":  "WAKE_DETECTED",
@@ -55,14 +55,21 @@ class OrbWindow(Gtk.ApplicationWindow):
         self.set_decorated(False)
         self.set_resizable(False)
 
+        # Load persisted position & monitor
+        self._margin_top, self._margin_right, self._monitor_idx = self._load_pos()
+
         Gtk4LayerShell.init_for_window(self)
         Gtk4LayerShell.set_layer(self, Gtk4LayerShell.Layer.TOP)
         Gtk4LayerShell.set_keyboard_mode(self, Gtk4LayerShell.KeyboardMode.NONE)
         Gtk4LayerShell.set_anchor(self, Gtk4LayerShell.Edge.TOP, True)
         Gtk4LayerShell.set_anchor(self, Gtk4LayerShell.Edge.RIGHT, True)
 
-        # Load persisted position (defaults: top=18, right=18)
-        self._margin_top, self._margin_right = self._load_pos()
+        # Apply monitor if multiple exist
+        display = Gdk.Display.get_default()
+        monitors = display.get_monitors()
+        if self._monitor_idx < monitors.get_n_items():
+            Gtk4LayerShell.set_monitor(self, monitors.get_item(self._monitor_idx))
+
         Gtk4LayerShell.set_margin(self, Gtk4LayerShell.Edge.TOP,   self._margin_top)
         Gtk4LayerShell.set_margin(self, Gtk4LayerShell.Edge.RIGHT, self._margin_right)
         self._drag_start_top   = self._margin_top
@@ -74,15 +81,19 @@ class OrbWindow(Gtk.ApplicationWindow):
         self.drawing.set_draw_func(self.on_draw)
         self.set_child(self.drawing)
 
-        # Drag to reposition the orb window via Layer Shell margin adjustment.
-        # GestureDrag + set_state(CLAIMED) is critical: CLAIMED causes GTK to
-        # keep delivering pointer events even when the mouse leaves the widget.
+        # Drag to reposition (within current monitor)
         drag = Gtk.GestureDrag()
-        drag.set_button(1)  # left mouse button only
+        drag.set_button(1)
         drag.connect("drag-begin",  self._on_drag_begin)
         drag.connect("drag-update", self._on_drag_update)
         drag.connect("drag-end",    self._on_drag_end)
         self.drawing.add_controller(drag)
+
+        # Right-click to cycle monitors
+        click = Gtk.GestureClick()
+        click.set_button(3) # Right mouse button
+        click.connect("pressed", self._on_right_click)
+        self.drawing.add_controller(click)
 
         # 60fps redraw loop + dropped frames counter
         self.target_dt = 1.0 / 60.0
@@ -119,22 +130,35 @@ class OrbWindow(Gtk.ApplicationWindow):
         t = threading.Thread(target=run_ws_subscriber, args=(ws_url, self.model), daemon=True)
         t.start()
 
-    # ── Position persistence ──────────────────────────────────────
+    # ── Position & Monitor persistence ────────────────────────────
     def _load_pos(self):
         try:
             with open(_POS_FILE) as f:
                 d = json.load(f)
-                return int(d.get("top", 18)), int(d.get("right", 18))
+                return int(d.get("top", 18)), int(d.get("right", 18)), int(d.get("monitor", 0))
         except Exception:
-            return 18, 18
+            return 18, 18, 0
 
     def _save_pos(self):
         try:
             os.makedirs(os.path.dirname(_POS_FILE), exist_ok=True)
             with open(_POS_FILE, "w") as f:
-                json.dump({"top": self._margin_top, "right": self._margin_right}, f)
+                json.dump({
+                    "top": self._margin_top, 
+                    "right": self._margin_right,
+                    "monitor": self._monitor_idx
+                }, f)
         except Exception:
             pass
+
+    def _on_right_click(self, gesture, n_press, x, y):
+        display = Gdk.Display.get_default()
+        monitors = display.get_monitors()
+        n = monitors.get_n_items()
+        if n > 1:
+            self._monitor_idx = (self._monitor_idx + 1) % n
+            Gtk4LayerShell.set_monitor(self, monitors.get_item(self._monitor_idx))
+            self._save_pos()
 
     # ── Drag handlers ─────────────────────────────────────────────
     def _on_drag_begin(self, gesture, sx, sy):

@@ -1,31 +1,27 @@
-# Handover Protocol — WANDA Voice
+# HANDOFF — STT WINDOW INJECTION (DICTATION)
 
-## Status Overview
-- **Project Name:** WANDA Voice
-- **Current Version:** 0.2.1
-- **Status:** Development / MVP Phase
-- **Last Update:** 2026-02-23
+## 🎯 STAND DER DINGE (Status Quo)
+Das Feature "Diktat in das aktive Fenster" wurde nach 5 Stunden intensiver Fehlersuche (Wayland-Zahlen-Bug, Zombie-Prozesse, CUDA OOM) stabilisiert und in den Vox-Voice Kern integriert.
 
-## Technical Context
-- **Core Stack:** Python (Faster-Whisper, Edge-TTS, Silero VAD)
-- **Architecture:** Transitioning from monolithic CLI to Event-Driven (Backend + Orb + MCC)
-- **Backends:** PipeWire (Audio), FastAPI (WebSockets), Gemini CLI / Ollama (LLM)
+**ORT DER WAHRHEIT:** `/home/jannis/Schreibtisch/Work-OS/40_Products/Vox-Voice/src/wandavoice/main.py` -> `def dictate(...)`
 
-## Active Tasks (Highlights)
-- [ ] Stabilize integration between `voice-engine` and `frontend/mcc`.
-- [ ] Finalize the "Orb" visual feedback loop.
-- [ ] Implement full barge-in logic in the audio pipeline.
+## 🛠️ FUNKTIONALITÄT
+- **Kommando:** `vox dictate --no-aura --no-console`
+- **Trigger:** Rechte Strg-Taste (`Right Ctrl`).
+- **Verhalten:** 
+    1.  Hält man die Taste, nimmt Vox auf (VAD-gefiltert via Silero).
+    2.  Beim Loslassen erfolgt eine 0,5s Verzögerung (um Modifier-Key-Konflikte zu vermeiden).
+    3.  Transkription via `large-v3-turbo` (CUDA).
+    4.  Injektion via `wtype` (Wayland-safe mit Modifier-Release `-m`).
 
-## Known Issues / Roadblocks
-- Wayland specific constraints for global hotkeys (currently using evdev).
-- Latency tuning for real-time interaction.
+## 🚩 WICHTIGE REPARATUREN (Lessons Learned)
+1.  **Insel-Lösungen gelöscht:** Der Ordner `shared/` und alle `v-talk` Aliase wurden entfernt. Vox-Voice ist jetzt das **einzige** System.
+2.  **Wayland-Fix:** `wtype` wurde um `-m ctrl_r` etc. erweitert, damit beim Tippen keine Escape-Zahlen (Zahlen-Bug) im Terminal erscheinen.
+3.  **CUDA-Schutz:** Kein Streaming mehr in den VRAM. Audio wird gesammelt und *einmalig* verarbeitet.
 
-## Artifacts & Storage
-- **Runs:** `backend/voice-engine/runs/`
-- **CAS:** `backend/voice-engine/cas/`
-- **Models:** `~/.wanda/models/`
+## 🚀 NÄCHSTE SCHRITTE
+- **Polish:** Finalisierung der VAD-Empfindlichkeit in `audio.py`.
+- **Integration:** Das separat existierende `VOX-MIND` (Notizen) muss langfristig als Skill in die `main.py` integriert werden, um UI-Kollisionen (doppelte Orbs) zu vermeiden.
 
-## Instructions for next Instance
-1. Verify the `.venv` consistency across `backend/` and root.
-2. Review the `docs/02_architecture/` for the latest state machine definitions.
-3. Check `docs/04_plan/TASKS.md` for the next implementation steps.
+---
+*Dokumentiert am 2026-02-26 | Ort: docs/04_plan/HANDOFF.md*

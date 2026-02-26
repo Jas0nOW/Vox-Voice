@@ -210,6 +210,114 @@ class AudioRecorder:
         return np.concatenate(speech_buffer)
 
 
+    def record_stream_segments(self, stop_queue: queue.Queue, on_segment) -> None:
+        """
+        Streaming dictation with VAD-based segmentation.
+
+        Architecture:
+          - Reader thread: reads pw-record, runs Silero VAD, enqueues complete speech segments
+          - Main thread: dequeues segments, calls on_segment(np.ndarray) for each one
+            (on_segment should transcribe + inject)
+
+        Stops when stop_queue receives an item. Any remaining audio at stop
+        is flushed as a final segment before returning.
+        """
+        SILENCE_FRAMES = 12  # ~384ms silence at 16kHz/512-sample chunks = end of segment
+
+        segment_queue: queue.Queue = queue.Queue()
+        stop_reader = threading.Event()
+
+        def _reader():
+            speech_buffer = []
+            vad_buf = np.array([], dtype=np.float32)
+            triggered = False
+            silent_frames = 0
+
+            process = self._start_pw_record()
+            try:
+                while not stop_reader.is_set():
+                    raw = self._read_nonblocking(process, 4096)
+                    if not raw:
+                        if process.poll() is not None:
+                            break
+                        time.sleep(0.005)
+                        continue
+
+                    valid = (len(raw) // 4) * 4
+                    if not valid:
+                        continue
+
+                    chunk = np.frombuffer(raw[:valid], dtype=np.float32).copy()
+                    if self.level_callback:
+                        self.level_callback(float(np.sqrt(np.mean(chunk ** 2))))
+
+                    vad_buf = np.concatenate([vad_buf, chunk])
+
+                    while len(vad_buf) >= self.vad_chunk_size:
+                        vad_chunk = vad_buf[:self.vad_chunk_size]
+                        vad_buf = vad_buf[self.vad_chunk_size:]
+                        prob = self.vad_model(
+                            torch.from_numpy(vad_chunk), self.target_samplerate
+                        ).item()
+
+                        if not triggered:
+                            if prob >= self.vad_threshold:
+                                triggered = True
+                                speech_buffer = [vad_chunk]
+                                silent_frames = 0
+                        else:
+                            speech_buffer.append(vad_chunk)
+                            if prob <= self.vad_threshold * 0.5:
+                                silent_frames += 1
+                                if silent_frames >= SILENCE_FRAMES:
+                                    segment_queue.put(np.concatenate(speech_buffer))
+                                    speech_buffer = []
+                                    triggered = False
+                                    silent_frames = 0
+                            else:
+                                silent_frames = 0
+
+            except Exception as e:
+                sys.stdout.write(f"\n[Reader Error] {e}\n")
+            finally:
+                process.terminate()
+                try:
+                    process.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                # Flush any remaining speech
+                if speech_buffer:
+                    segment_queue.put(np.concatenate(speech_buffer))
+                segment_queue.put(None)  # sentinel
+
+        reader = threading.Thread(target=_reader, daemon=True, name="stream-reader")
+        reader.start()
+
+        sys.stdout.write("\033[91m ● Streaming — press [Right Ctrl] again to stop...\033[0m\n")
+        sys.stdout.flush()
+
+        while True:
+            # Check stop signal (non-blocking, so we can still drain remaining segments)
+            if not stop_reader.is_set():
+                try:
+                    stop_queue.get_nowait()
+                    stop_reader.set()
+                except queue.Empty:
+                    pass
+
+            try:
+                segment = segment_queue.get(timeout=0.05)
+                if segment is None:
+                    break
+                on_segment(segment)
+            except queue.Empty:
+                pass
+
+        reader.join(timeout=3.0)
+        if self.level_callback:
+            self.level_callback(0.0)
+        sys.stdout.write("\033[90m ⏹ Stopped.\033[0m\n")
+
     def record_toggle(self, stop_queue: queue.Queue, stt_engine=None, transcript_callback=None) -> Optional[np.ndarray]:
         chunks = []
 

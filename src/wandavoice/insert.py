@@ -19,8 +19,13 @@ def insert_text(text: str, mode: str = "active"):
 
     # Mode == active (typing)
     # 1. Try wtype (Wayland)
+    # -m ctrl -m shift releases any held modifiers before typing (prevents Zahlen-Bug
+    # when Right Ctrl is still held by the compositor at injection time)
     try:
-        subprocess.run(["wtype", text], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["wtype", "-m", "ctrl", "-m", "shift", "--", text],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
         return
     except (FileNotFoundError, subprocess.CalledProcessError):
         pass
